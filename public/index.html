@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#eef1f5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>小鲸</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="bg"></div>
+
+<div id="app">
+  <header id="topbar">
+    <div class="who">
+      <div class="avatar" id="avatar"><img id="avatarImg" alt="" hidden><span id="avatarEmoji">🐋</span></div>
+      <div class="meta">
+        <div class="name"><span id="name">小鲸</span><span class="dot off" id="dot"></span></div>
+        <div class="sub" id="sub">正在连接…</div>
+      </div>
+    </div>
+    <div class="tools">
+      <button class="iconbtn" id="btnStatus" title="状态">⛶</button>
+      <button class="iconbtn" id="btnMenu" title="更多">≡</button>
+    </div>
+  </header>
+
+  <div id="statusbar" class="hidden"></div>
+
+  <main id="stream"></main>
+
+  <footer id="composer">
+    <textarea id="input" rows="1" placeholder="说点什么…" enterkeyhint="send"></textarea>
+    <button id="send" aria-label="发送">↑</button>
+  </footer>
+</div>
+
+<div id="mask"></div>
+<aside id="drawer">
+  <div class="dhead">
+    <span>设置</span>
+    <button class="iconbtn" id="btnClose" title="关闭">✕</button>
+  </div>
+  <div class="dbody" id="dbody"></div>
+</aside>
+
+<div id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
