@@ -1,0 +1,7 @@
+# 小鲸控制台 —— DSH bundle patch
+#
+# 只插一行：插件本体（宿主半边 src/host.js + 网页半边 client/client.js）。
+# 面板入口出现在侧栏「自动化任务」下面，名字叫「小鲸」。
+- insert:
+    - id: xiaojing-panel
+      name: dsh-xiaojing-panel
