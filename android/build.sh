@@ -18,8 +18,8 @@ JAVAEXE="$JAVA/java.exe"
 APKJAR="$PARENT/build/sdk/platforms/android-34/android.jar"
 
 export JAVA_HOME="$(cygpath -w "$JAVA/..")"
-VERSION_NAME="10.0"
-VERSION_CODE="100"
+VERSION_NAME="10.4"
+VERSION_CODE="104"
 
 echo "=== 清理 ==="
 rm -rf "$WORK"
