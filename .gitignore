@@ -1,0 +1,30 @@
+# 密钥
+.env
+*.bak
+
+# 运行时数据（聊天记录、记忆、情绪、口令）
+data/
+
+# 用户上传的图和文件
+public/uploads/
+public/dl/
+
+# 表情包（自己准备，不进仓库）
+public/stickers/*
+!public/stickers/README.md
+
+# 构建产物
+build/
+android/build/
+dl/
+backup/
+
+# 依赖
+node_modules/
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
