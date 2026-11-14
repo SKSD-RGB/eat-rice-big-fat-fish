@@ -67,7 +67,7 @@ public class BridgeService extends Service {
                 ? new Notification.Builder(this, CH_KEEP)
                 : new Notification.Builder(this);
 
-        return b.setContentTitle("张小满")
+        return b.setContentTitle("吃白饭的大肥鱼")
                 .setContentText("在线 · 守护中")
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentIntent(pi)
@@ -87,7 +87,7 @@ public class BridgeService extends Service {
                 ? new Notification.Builder(this, CH_MSG)
                 : new Notification.Builder(this);
 
-        Notification n = b.setContentTitle("张小满")
+        Notification n = b.setContentTitle("吃白饭的大肥鱼")
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
@@ -113,7 +113,7 @@ public class BridgeService extends Service {
         Intent i0 = new Intent(this, MainActivity.class);
         PendingIntent pi0 = PendingIntent.getActivity(this, 0, i0,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
-        startForeground(ID_KEEP, b0.setContentTitle("张小满")
+        startForeground(ID_KEEP, b0.setContentTitle("吃白饭的大肥鱼")
                 .setContentText("正在连接…")
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentIntent(pi0).setOngoing(true).setOnlyAlertOnce(true).build());
@@ -242,7 +242,7 @@ public class BridgeService extends Service {
                 Intent i = new Intent(this, MainActivity.class);
                 PendingIntent pi = PendingIntent.getActivity(this, 0, i,
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
-                nm.notify(ID_KEEP, b.setContentTitle("张小满")
+                nm.notify(ID_KEEP, b.setContentTitle("吃白饭的大肥鱼")
                         .setContentText("断开了，正在重连…")
                         .setSmallIcon(android.R.drawable.stat_sys_warning)
                         .setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(true).build());
