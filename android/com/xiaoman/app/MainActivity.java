@@ -74,7 +74,13 @@ public class MainActivity extends Activity {
      * 所有绘制都必须先过这里，过不去就什么都不做。
      * 只在 UI 线程读写，天然不会并发。
      */
+    /** 批量画历史时为 true，此时每条都不要自己滚到底 */
+    private boolean suppressAutoScroll = false;
+    /** 手里所有的消息，按时间从早到晚排好。重画永远以它为准 */
+    private final java.util.ArrayList<Msg> allMessages = new java.util.ArrayList<>();
     private final java.util.HashSet<String> drawnIds = new java.util.HashSet<>();
+    /** 已画过的消息 id，按时间先后排列。第 0 个就是当前最上面那条 */
+    private final java.util.ArrayList<String> loadedIds = new java.util.ArrayList<>();
 
     /** 上一次显示分隔时间的位置（毫秒） */
     private long lastDividerAt = 0;
@@ -270,6 +276,9 @@ public class MainActivity extends Activity {
             checkOnline();
             messages.removeAllViews();
             drawnIds.clear();
+            loadedIds.clear();
+            oldestId = null;
+            noMoreOlder = false;
             lastDividerAt = 0;
             loadAllHistory();
             if (statusOpen) fetchStatus();
@@ -335,6 +344,13 @@ public class MainActivity extends Activity {
                 dismissInputPanel();
             }
             return false;   // 不拦截，滚动照常
+        });
+
+        // ★ 滑到顶部就自动去拉更早的消息（往上翻不完）
+        scroll.setOnScrollChangeListener((v, sx, sy, osx, osy) -> {
+            if (sy <= dp(60) && sy < osy) {     // 接近顶部，而且是往上滑
+                loadOlder();
+            }
         });
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -846,12 +862,12 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < arr.length(); i++) list.add(Msg.from(arr.getJSONObject(i)));
 
                 ui.post(() -> {
-                    // 清屏 + 清账本，然后一次性重画
-                    messages.removeAllViews();
-                    drawnIds.clear();
-                    lastDividerAt = 0;
-                    for (Msg m : list) drawIfNew(m);
+                    allMessages.clear();
+                    allMessages.addAll(list);
+                    sortByTime();
+                    redrawAll();                    // 改由一个函数统一重画，保顺序
                     historyDone = true;
+                    scrollDown();                   // 首次加载滚到底
                 });
             } catch (Exception e) {
                 final String msg = e.getMessage();
@@ -862,6 +878,166 @@ public class MainActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    // ---------- 往上翻：加载更早的消息 ----------
+    // 后端支持 ?before=<最上面那条的 id|at>，一次返一批更早的。
+    // 插入到顶部，同时把滚动位置稳住，别让画面突然跳走。
+    private volatile boolean loadingOlder = false;
+    private volatile boolean noMoreOlder = false;
+    private String oldestId = null;      // 当前最上面那条的标识
+
+    /** 记住当前最上面那条，供「再往前翻」用 */
+    private void rememberOldest() {
+        if (loadedIds.isEmpty()) return;
+        oldestId = loadedIds.get(0);         // 按时间顺序记下来，第 0 个就是最早的
+    }
+
+    private void loadOlder() {
+        if (loadingOlder || noMoreOlder) return;
+        if (oldestId == null) { rememberOldest(); }
+        if (oldestId == null) { noMoreOlder = true; return; }
+        loadingOlder = true;
+
+        final String cursor = oldestId;
+        new Thread(() -> {
+            try {
+                URL u = new URL("http://" + host + ":" + port
+                        + "/app/history?limit=50&before=" + android.net.Uri.encode(cursor));
+                HttpURLConnection c = (HttpURLConnection) u.openConnection();
+                c.setRequestProperty("authorization", "Bearer " + token);
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(20000);
+                String s = readAll(c);
+                c.disconnect();
+
+                JSONObject o = new JSONObject(s);
+                JSONArray arr = o.optJSONArray("messages");
+                final boolean hasMore = o.optBoolean("hasMore", false);
+                final List<Msg> list = new ArrayList<>();
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) list.add(Msg.from(arr.getJSONObject(i)));
+                }
+
+                ui.post(() -> {
+                    loadingOlder = false;
+                    if (list.isEmpty()) {
+                        noMoreOlder = true;
+                        toast("已经到头了");
+                        return;
+                    }
+                    if (!hasMore) noMoreOlder = true;
+                    prependMessages(list);
+                });
+            } catch (Exception e) {
+                loadingOlder = false;
+                final String msg = e.getMessage();
+                ui.post(() -> toast("拉更早的消息失败：" + msg));
+            }
+        }).start();
+    }
+
+    /** 把一批更早的消息并进来，按时间排好后整体重画，并稳住视线 */
+    private void prependMessages(List<Msg> list) {
+        final int beforeHeight = messages.getHeight();
+        final int beforeScroll = scroll.getScrollY();
+
+        // 并进来（重复的跳过）
+        java.util.HashSet<String> have = new java.util.HashSet<>();
+        for (Msg m : allMessages) have.add(m.id);
+        int added = 0;
+        for (Msg m : list) {
+            if (m == null || m.id == null || m.id.isEmpty()) continue;
+            if (have.contains(m.id)) continue;
+            allMessages.add(m);
+            have.add(m.id);
+            added++;
+        }
+        if (added == 0) return;
+
+        sortByTime();
+        redrawAll();
+
+        // 等布局完成后再把滚动位置补回去，画面不会跳
+        messages.post(() -> {
+            int afterHeight = messages.getHeight();
+            int delta = afterHeight - beforeHeight;
+            if (delta > 0) scroll.scrollTo(0, beforeScroll + delta);
+        });
+    }
+
+    /** 用户现在是不是在看历史（离底部远）——此时不该自动滚到底 */
+    private boolean isBrowsingHistory() {
+        if (scroll == null || messages == null) return false;
+        int max = messages.getHeight() - scroll.getHeight();
+        if (max <= 0) return false;
+        return (max - scroll.getScrollY()) > dp(200);   // 离底部超过 200dp 就算在看历史
+    }
+
+    /** 按时间从早到晚排。时间一样就按 id 排，保证结果稳定 */
+    private void sortByTime() {        java.util.Collections.sort(allMessages, (a, b) -> {
+            int c = Long.compare(a.at, b.at);
+            if (c != 0) return c;
+            return a.id.compareTo(b.id);
+        });
+    }
+
+    /** 按 allMessages 的顺序整体重画。这是画面顺序的唯一来源 */
+    private void redrawAll() {
+        messages.removeAllViews();
+        drawnIds.clear();
+        loadedIds.clear();
+        lastDividerAt = 0;
+
+        suppressAutoScroll = true;
+        for (Msg m : allMessages) drawIfNew(m);
+        suppressAutoScroll = false;
+
+        rememberOldest();
+    }
+
+    /**
+     * 轮询回来的新消息：只把真正新的追加到末尾。
+     * 如果发现这批里有比现有记录更早的（不该出现），退回整体重画。
+     */
+    private void appendMessages(List<Msg> list) {
+        if (list == null || list.isEmpty()) return;
+
+        java.util.HashSet<String> have = new java.util.HashSet<>();
+        for (Msg m : allMessages) have.add(m.id);
+
+        boolean needFull = false;
+        java.util.ArrayList<Msg> fresh = new java.util.ArrayList<>();
+        long newestAt = 0;
+        if (!allMessages.isEmpty()) newestAt = allMessages.get(allMessages.size() - 1).at;
+
+        for (Msg m : list) {
+            if (m == null || m.id == null || m.id.isEmpty()) continue;
+            if (have.contains(m.id)) continue;
+            if (m.at > 0 && m.at < newestAt) { needFull = true; break; }  // 有更早的 → 重排
+            fresh.add(m);
+        }
+        if (needFull) {
+            final boolean browsing = isBrowsingHistory();
+            final int keepScroll = scroll.getScrollY();
+            allMessages.addAll(fresh);
+            sortByTime();
+            redrawAll();
+            if (browsing) messages.post(() -> scroll.scrollTo(0, keepScroll));
+            else scrollDown();
+            return;
+        }
+        if (fresh.isEmpty()) return;
+
+        allMessages.addAll(fresh);
+        if (isBrowsingHistory()) {
+            // 用户在翻历史，别把他拽到底 —— 关掉自动滚动追加进去就行
+            suppressAutoScroll = true;
+            for (Msg m : fresh) drawIfNew(m);
+            suppressAutoScroll = false;
+        } else {
+            for (Msg m : fresh) drawIfNew(m);
+        }
     }
 
     /** 只拉最新几条，把没见过的补上 */
@@ -887,7 +1063,7 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < arr.length(); i++) list.add(Msg.from(arr.getJSONObject(i)));
 
                 ui.post(() -> {
-                    for (Msg m : list) drawIfNew(m);
+                    appendMessages(list);
                 });
             } catch (Exception ignored) {
             } finally {
@@ -910,6 +1086,7 @@ public class MainActivity extends Activity {
     private void drawIfNew(Msg m) {
         if (m == null || m.id == null || m.id.isEmpty()) return;
         if (!drawnIds.add(m.id)) return;        // ← 核心：add 返回 false 就是画过了
+        loadedIds.add(m.id);                    // 按时间顺序留一份，供「往前翻」定位
         currentMsgId = m.id;
         Log.i("draw id=" + m.id + " " + (m.mine ? "我" : "她") + " text=" + brief(m.text));
 
@@ -926,7 +1103,7 @@ public class MainActivity extends Activity {
                 drawText(s, m.mine);
             }
         }
-        scrollDown();
+        if (!suppressAutoScroll) scrollDown();
     }
 
     private String extractImageUrl(String line) {
@@ -997,6 +1174,9 @@ public class MainActivity extends Activity {
             // 重画已有气泡（简单做法：重新拉历史）
             messages.removeAllViews();
             drawnIds.clear();
+            loadedIds.clear();
+            oldestId = null;
+            noMoreOlder = false;
             lastDividerAt = 0;
             loadAllHistory();
             toast("换成" + Theme.SKIN_NAMES[idx]);
@@ -1069,6 +1249,9 @@ public class MainActivity extends Activity {
         apiPost("/app/clear", "{}", r -> {
             messages.removeAllViews();
             drawnIds.clear();
+            loadedIds.clear();
+            oldestId = null;
+            noMoreOlder = false;
             lastDividerAt = 0;
             toast("清空了");
         });
@@ -1400,6 +1583,9 @@ public class MainActivity extends Activity {
                         apiPost("/app/regen", "{\"id\":\"" + msgId + "\"}", r -> {
                             messages.removeAllViews();
                             drawnIds.clear();
+                            loadedIds.clear();
+                            oldestId = null;
+                            noMoreOlder = false;
                             lastDividerAt = 0;
                             loadAllHistory();
                             toast("重新生成了");
@@ -1479,7 +1665,8 @@ public class MainActivity extends Activity {
                         android.graphics.BitmapFactory.decodeStream(new URL(url).openStream());
                 if (bmp != null) ui.post(() -> {
                     iv.setImageBitmap(bmp);
-                    scrollDown();
+                    // 图片加载完别把正在翻历史的用户拽到底
+                    if (!suppressAutoScroll && !isBrowsingHistory()) scrollDown();
                 });
             } catch (Exception e) {
                 ui.post(() -> {
@@ -1583,12 +1770,26 @@ public class MainActivity extends Activity {
 
     /** 收起键盘 + 收起表情面板（点空白处用） */
     private void dismissInputPanel() {
-        hideKeyboard();
+        // 先记住：键盘/表情到底开没开。开着才需要滚回底部，
+        // 单纯划一下看历史的时候绝不能滚，否则一松手就被拽回去。
+        boolean panelWasOpen = isInputPanelOpen();
+
         if (stickerPanel != null && stickerPanel.isShowing()) {
             stickerPanel.hide();
         }
         if (input != null) input.clearFocus();
-        scrollDown();
+        hideKeyboard();
+
+        // 只有本来就开着输入面板时才滚到底 —— 收起面板会让可视区变高，
+        // 这时补一次到底才有意义。平时翻历史不受影响。
+        if (panelWasOpen) scrollDown();
+    }
+
+    /** 输入面板（键盘或表情）现在是不是开着 —— 必须在收起之前调用 */
+    private boolean isInputPanelOpen() {
+        if (stickerPanel != null && stickerPanel.isShowing()) return true;
+        // 键盘高度 > 100dp 认为键盘开着
+        return keyboardHeight > dp(100);
     }
 
     /** 主动把键盘叫起来 */
