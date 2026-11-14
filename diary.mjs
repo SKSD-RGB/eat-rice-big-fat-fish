@@ -19,7 +19,8 @@ mkdirSync(DATA, { recursive: true })
 const LOG = join(DATA, 'diary.log')
 // 2026-11-13 改：日记直接写到他桌面的「小鲸的日记」文件夹，他一打开就看得见。
 // 程序目录里那份继续留一份（备份用）。
-const DIARY_DIR = 'C:\\Users\\Administrator\\Desktop\\小鲸的日记'
+// 日记写到哪儿：默认放在项目自己目录下的 diary/，要换地方就设环境变量 DIARY_DIR
+const DIARY_DIR = process.env.DIARY_DIR || join(__dir, 'diary')
 mkdirSync(DIARY_DIR, { recursive: true })
 const DIARY_BACKUP = join(__dir, 'diary')
 mkdirSync(DIARY_BACKUP, { recursive: true })
