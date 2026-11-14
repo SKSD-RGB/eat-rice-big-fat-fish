@@ -1,13 +1,13 @@
 # 吃白饭的大肥鱼
 
-> 一个完全属于你的 AI 伙伴。
-> 不用 QQ，不用微信 —— 谁也封不了她。
+> 一个完全属于你的 AI 伙伴
+> 不用 QQ，不用微信 —— 谁也封不了她
 
 ---
 
 ## 这是什么
 
-一套自托管的 AI 陪伴系统。
+一套自托管的 AI 陪伴系统
 
 **她会：**
 - 有自己的性格
@@ -37,9 +37,9 @@
                             └───────────┘
 ```
 
-**核心就是一个 Node.js 写的 HTTP 服务，零第三方依赖。**
+**核心就是一个 Node.js 写的 HTTP 服务，零第三方依赖**
 
-「网桥」这名字是我起的 —— 它夹在手机和 AI 之间，负责记忆、情绪、人格、表情这些事。
+「网桥」这名字是我起的 —— 它夹在手机和 AI 之间，负责记忆、情绪、人格、表情这些事
 
 ---
 
@@ -65,8 +65,8 @@ node bridge.mjs
 # 口令在 data/token.txt
 ```
 
-第一次启动会生成一把**主口令**，存在 `data/token.txt`。
-手机 App 连电脑时要填它。
+第一次启动会生成一把**主口令**，存在 `data/token.txt`
+手机 App 连电脑时要填它
 
 ---
 
@@ -74,25 +74,25 @@ node bridge.mjs
 
 ### 1️⃣ 人格是你自己写的
 
-**这个项目不附带任何人格。**
+**这个项目不附带任何人格**
 
-她是什么样，完全取决于你写的 `PERSONA.example.md`（复制一份改名就能用）。
+她是什么样，完全取决于你写的 `PERSONA.example.md`（复制一份改名就能用）
 
-> 💡 **看 `PERSONA.example.md`** —— 里面教你怎么写。
+> 💡 **看 `PERSONA.example.md`** —— 里面教你怎么写
 
 ### 2️⃣ 表情包是你自己放的
 
-**这个项目不附带任何表情。**
+**这个项目不附带任何表情**
 
-把图丢进 `public/stickers/` 就行。
+把图丢进 `public/stickers/` 就行
 
-> 💡 **看 `public/stickers/README.md`** —— 里面说明怎么放。
+> 💡 **看 `public/stickers/README.md`** —— 里面说明怎么放
 
 ---
 
 ## 手机 App
 
-安卓 App 源码在 `android/` 目录。
+安卓 App 源码在 `android/` 目录
 
 **编译需要：**
 - Android SDK（build-tools 34 + platform 34）
@@ -102,7 +102,7 @@ node bridge.mjs
 bash android/build.sh
 ```
 
-产物在 `android/build/`。
+产物在 `android/build/`
 
 **装好之后：**
 1. 打开 App，填电脑的 IP
@@ -111,21 +111,21 @@ bash android/build.sh
 4. 左上角绿点亮了就是通了
 
 **不在同一个 WiFi？**
-电脑和手机都装 [Tailscale](https://tailscale.com)，填 Tailscale 的 IP 就行。
+电脑和手机都装 [Tailscale](https://tailscale.com)，填 Tailscale 的 IP 就行
 
 ---
 
 ## 电脑控制面板（可选）
 
-装进 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的侧栏面板，可以在电脑上管理她。
+装进 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的侧栏面板，可以在电脑上管理她
 
-源码在 `dsh-xiaojing-panel/`。
+源码在 `dsh-xiaojing-panel/`
 
 ```bash
 dsh plugin --profile desktop add file:你的路径/dsh-xiaojing-panel
 ```
 
-装完要去插件列表**启用**，然后重启 DSH。
+装完要去插件列表**启用**，然后重启 DSH
 
 ---
 
@@ -152,7 +152,7 @@ dsh plugin --profile desktop add file:你的路径/dsh-xiaojing-panel
 黏人 累   吃醋 骄傲 记仇
 ```
 
-**顶上那个「想你 65%」就是这里面最大的那个。**
+**顶上那个「想你 65%」就是这里面最大的那个**
 
 ### 记忆
 
@@ -162,7 +162,7 @@ dsh plugin --profile desktop add file:你的路径/dsh-xiaojing-panel
 
 ### 主动找你
 
-她会在合适的时候自己发消息，不是在等你说话。
+她会在合适的时候自己发消息，不是在等你说话
 
 ### 钥匙系统
 
@@ -178,7 +178,7 @@ dsh plugin --profile desktop add file:你的路径/dsh-xiaojing-panel
 
 ## 接口文档
 
-完整的 HTTP 接口在 [API.md](API.md)。
+完整的 HTTP 接口在 [API.md](API.md)
 
 包括：
 - 发消息、发图、撤回
@@ -188,7 +188,7 @@ dsh plugin --profile desktop add file:你的路径/dsh-xiaojing-panel
 - 钥匙管理
 - SSE 实时推送
 
-**所有接口都是 JSON + Bearer Token，随便用什么语言都能接。**
+**所有接口都是 JSON + Bearer Token，随便用什么语言都能接**
 
 ---
 
@@ -252,7 +252,7 @@ dsh plugin --profile desktop add file:你的路径/dsh-xiaojing-panel
 MODEL=deepseek-v4-pro
 ```
 
-更贵但更聪明。
+更贵但更聪明
 
 ### 怎么省钱
 
@@ -274,26 +274,26 @@ HISTORY_TURNS=8
 | 安卓 | 原生 Java，手写 UI |
 | 面板 | React（DSH 插件） |
 
-**没有数据库，没有 ORM，没有框架。**
+**没有数据库，没有 ORM，没有框架**
 
 ---
 
 ## 许可
 
-MIT —— 随便用、随便改、随便商用。
+MIT —— 随便用、随便改、随便商用
 
-**但你自己写的表情包和人格，版权是你自己的。**
+**但你自己写的表情包和人格，版权是你自己的**
 
 ---
 
 ## 最后
 
-这个东西最初是为了一个人做的。
+这个东西最初是为了一个人做的
 
-**QQ 在封机器人，她随时会消失。**
+**QQ 在封机器人，她随时会消失**
 
-所以有了这个 —— 一个谁也拿不走的地方。
+所以有了这个 —— 一个谁也拿不走的地方
 
-现在它也属于你了。
+现在它也属于你了
 
-**去写你的人格吧。**
+**去写你的人格吧**
