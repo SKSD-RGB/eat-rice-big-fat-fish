@@ -27,7 +27,8 @@ try {
 }
 
 // nekowhale 的 322 个里，本地只有 28 个（按 hash 存）
-const NK_DIR = 'C:\\Users\\Administrator\\.dsh\\nekowhale-stickers\\byhash'
+// nekowhale 表情包目录：设了 NEKO_STICKERS_DIR 才去读，没设就用自带的
+const NK_DIR = process.env.NEKO_STICKERS_DIR || ''
 
 // 名字 → 可用文件
 function findNeko(name) {
