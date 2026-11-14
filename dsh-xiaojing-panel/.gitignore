@@ -1,0 +1,8 @@
+# 依赖
+node_modules/
+
+# 插件运行时配置（如果有的话）
+config.json
+
+# 日志
+*.log
