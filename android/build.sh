@@ -8,7 +8,17 @@ WORK="$AND/build"
 PARENT="$(cd "$ROOT/.." && pwd)"
 BT="$PARENT/build/sdk/build-tools/34.0.0"
 JAVA="$PARENT/build/jdk-17.0.21+9/bin"
-PY="/c/Users/Administrator/Documents/deepseek-harness/default-workspace/py310/python.exe"
+# 塞 dex 要用 python。优先用环境变量 PYTHON，其次找常见的 python，都没有就报错
+if [ -n "${PYTHON:-}" ]; then
+  PY="$PYTHON"
+elif command -v python3 >/dev/null 2>&1; then
+  PY=python3
+elif command -v python >/dev/null 2>&1; then
+  PY=python
+else
+  echo "找不到 python，请设置环境变量 PYTHON 指向你的 python 可执行文件"
+  exit 1
+fi
 
 AAPT2="$BT/aapt2.exe"
 ZIPALIGN="$BT/zipalign.exe"
@@ -18,8 +28,8 @@ JAVAEXE="$JAVA/java.exe"
 APKJAR="$PARENT/build/sdk/platforms/android-34/android.jar"
 
 export JAVA_HOME="$(cygpath -w "$JAVA/..")"
-VERSION_NAME="10.4"
-VERSION_CODE="104"
+VERSION_NAME="10.5"
+VERSION_CODE="105"
 
 echo "=== 清理 ==="
 rm -rf "$WORK"
