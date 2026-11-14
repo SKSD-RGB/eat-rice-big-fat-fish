@@ -593,7 +593,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/app/history') {
       if (!authed(req, url)) return json(res, 401, { ok: false, error: '口令不对' })
       const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '100', 10) || 100)
-      return json(res, 200, { ok: true, messages: history.slice(-limit) })
+
+      // before=某条消息的 id 或 at：只返回比它更早的。
+      // 不带 before 就是老行为——取最新的 limit 条。
+      const before = String(url.searchParams.get('before') || '')
+      if (!before) {
+        return json(res, 200, { ok: true, messages: history.slice(-limit), total: history.length })
+      }
+      // 找到那条的位置
+      let idx = -1
+      for (let i = history.length - 1; i >= 0; i--) {
+        const m = history[i]
+        if ((m.id && String(m.id) === before) || String(m.at) === before) { idx = i; break }
+      }
+      if (idx < 0) {
+        // 找不到就当作「比全部更早」= 空页，别让 App 无限翻
+        return json(res, 200, { ok: true, messages: [], total: history.length, hasMore: false })
+      }
+      const from = Math.max(0, idx - limit)
+      const slice = history.slice(from, idx)
+      return json(res, 200, {
+        ok: true,
+        messages: slice,
+        total: history.length,
+        hasMore: from > 0,
+      })
     }
 
     // 自己是谁
