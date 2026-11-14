@@ -49,7 +49,7 @@ public class SetupActivity extends Activity {
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("填电脑的地址、端口和口令。\n口令在电脑上 xinjia/data/token.txt 里。");
+        hint.setText("填电脑的地址、端口和口令。\n口令在项目目录的 data/token.txt 里。");
         hint.setTextSize(13);
         hint.setTextColor(Color.parseColor("#9A9A9A"));
         hint.setPadding(0, dp(8), 0, dp(24));
