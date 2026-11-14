@@ -625,7 +625,7 @@ const server = http.createServer(async (req, res) => {
       if (!authed(req, url)) return json(res, 401, { ok: false, error: '口令不对' })
       return json(res, 200, {
         ok: true,
-        name: '张小满',
+        name: '吃白饭的大肥鱼',
         persona: persona.length,
         memories: Array.isArray(mem.memories) ? mem.memories.length : Object.keys(mem.memories || {}).length,
         history: history.length,
