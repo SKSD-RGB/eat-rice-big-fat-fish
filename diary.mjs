@@ -4,7 +4,7 @@
 // 每天 23:30 跑一次：把当天聊过的内容，让她自己用第一人称写一篇日记，
 // 提炼出新的记忆条目，存进 memories.json 的 extra 里。
 //
-// 不进不出错都不许静默 —— 所有结果写 xinjia/data/diary.log
+// 不进不出错都不许静默 —— 所有结果写 data/diary.log
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
