@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -63,7 +64,7 @@ public class MainActivity extends Activity {
     private android.widget.FrameLayout rootFrame;
     private String herName = "小鲸";
     private String avatarPath = "";
-    private String coverPath = "";   // 聊天背景封面，空 = 用主题色
+    private String coverPath = "";   // 聊天背景：空=主题色；"preset:xxx"=内置背景；其它=图片文件路径
     private String currentMsgId = "";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -178,30 +179,35 @@ public class MainActivity extends Activity {
         if (savedName != null && !savedName.isEmpty()) herName = savedName;
 
         coverPath = spInit.getString("cover", "");
-        if (coverPath != null && !new java.io.File(coverPath).exists()) coverPath = "";
+        if (coverPath == null) coverPath = "";
+        // 是文件路径且文件没了 → 清空；预设名不用查文件
+        if (!coverPath.isEmpty() && !coverPath.startsWith("preset:")
+                && !new java.io.File(coverPath).exists()) coverPath = "";
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        // 背景：有封面图就铺图（盖一层薄雾让字看得清），没有就用主题色
-        if (coverPath != null && !coverPath.isEmpty()) {
+        // 背景：有图就铺图（盖一层薄雾让字看得清），没有就用主题色
+        // 关键：按 CENTER_CROP 铺——原图比例保留，多出来的裁掉（跟微信一样），不会拉变形
+        android.graphics.drawable.Drawable bgDrawable = null;
+        if (coverPath != null && coverPath.startsWith("preset:")) {
+            bgDrawable = presetDrawable(coverPath.substring(7));
+        } else if (coverPath != null && !coverPath.isEmpty()) {
             java.io.File cf = new java.io.File(coverPath);
             if (cf.exists()) {
-                android.graphics.drawable.BitmapDrawable bd =
-                        new android.graphics.drawable.BitmapDrawable(
-                                getResources(),
-                                android.graphics.BitmapFactory.decodeFile(coverPath));
-                bd.setGravity(android.view.Gravity.FILL);
-                GradientDrawable veil = new GradientDrawable(
-                        GradientDrawable.Orientation.TOP_BOTTOM,
-                        Theme.dark ? new int[]{0x99101520, 0xBB0A0F18}
-                                   : new int[]{0x55FFFFFF, 0x88FFFFFF});
-                root.setBackground(new android.graphics.drawable.LayerDrawable(
-                        new android.graphics.drawable.Drawable[]{bd, veil}));
-            } else {
-                root.setBackground(Theme.background());
+                try {
+                    bgDrawable = new android.graphics.drawable.BitmapDrawable(
+                            getResources(), android.graphics.BitmapFactory.decodeFile(coverPath));
+                } catch (Throwable t) { bgDrawable = null; }
             }
-        } else {
+        }
+        if (bgDrawable == null) {
             root.setBackground(Theme.background());
+        } else {
+            GradientDrawable veil = new GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    Theme.dark ? new int[]{0x33101520, 0x550A0F18}
+                               : new int[]{0x08000000, 0x22000000});
+            root.setBackground(new CoverLayerDrawable(bgDrawable, veil));
         }
 
         // ===== 顶栏 =====
@@ -683,6 +689,33 @@ public class MainActivity extends Activity {
         if (code != RESULT_OK || data == null || data.getData() == null) return;
 
         // 换封面
+        if (req == 2004) {
+            // 拍照回来：把临时文件转成背景
+            try {
+                java.io.File src = new java.io.File(getFilesDir(), "cover_shot.jpg");
+                if (src.exists() && src.length() > 0) {
+                    java.io.File dst = new java.io.File(getFilesDir(), "cover.jpg");
+                    java.io.FileInputStream in = new java.io.FileInputStream(src);
+                    java.io.FileOutputStream out = new java.io.FileOutputStream(dst);
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    in.close(); out.close();
+                    src.delete();
+                    coverPath = dst.getAbsolutePath();
+                    getSharedPreferences(SetupActivity.PREF, Context.MODE_PRIVATE)
+                            .edit().putString("cover", coverPath).apply();
+                    rebuildUI();
+                    toast("背景换好了");
+                } else {
+                    toast("没拍到照片");
+                }
+            } catch (Exception e) {
+                toast("存不下：" + e.getMessage());
+            }
+            return;
+        }
+
         if (req == 2003) {
             try {
                 InputStream in = getContentResolver().openInputStream(data.getData());
@@ -1183,7 +1216,7 @@ public class MainActivity extends Activity {
         }
 
         @Override public void onChangeAvatar() { pickAvatar(); }
-        @Override public void onCover() { pickCover(); }
+        @Override public void onCover() { showBgPicker(); }
 
         @Override public void onClearChat() {
             MDialog.card(MainActivity.this, "清空聊天记录？",
@@ -1478,6 +1511,294 @@ public class MainActivity extends Activity {
     }
 
     // ---------- 换头像 ----------
+    /** 内置背景清单：键、名字、资源 */
+    static final String[][] BG_PRESETS = {
+            {"white",  "纯白",   "bg_w_white"},
+            {"wave",   "蓝色波纹", "bg_w_wave"},
+            {"heart",  "爱心",   "bg_w_heart"},
+            {"grain",  "白纹",   "bg_w_grain"},
+            {"damask", "花纹",   "bg_w_damask"},
+            {"warm",   "暖色",   "bg_w_warm"},
+            {"stars",  "星空",   "bg_w_stars"},
+            {"black",  "皮革黑",  "bg_w_black"},
+            {"gold",   "金色光斑", "bg_w_gold"},
+    };
+
+    /** 按预设键拿资源 id */
+    private int presetResId(String key) {
+        switch (key) {
+            case "white":  return R.drawable.bg_w_white;
+            case "wave":   return R.drawable.bg_w_wave;
+            case "heart":  return R.drawable.bg_w_heart;
+            case "grain":  return R.drawable.bg_w_grain;
+            case "damask": return R.drawable.bg_w_damask;
+            case "warm":   return R.drawable.bg_w_warm;
+            case "stars":  return R.drawable.bg_w_stars;
+            case "black":  return R.drawable.bg_w_black;
+            case "gold":   return R.drawable.bg_w_gold;
+            default: return 0;
+        }
+    }
+
+    private android.graphics.drawable.Drawable presetDrawable(String key) {
+        int id = presetResId(key);
+        if (id == 0) return null;
+        try { return getResources().getDrawable(id, getTheme()); }
+        catch (Throwable t) { return null; }
+    }
+
+    /** 选中某个背景并立刻生效 */
+    private void applyBg(String value, String label) {
+        coverPath = value == null ? "" : value;
+        getSharedPreferences(SetupActivity.PREF, Context.MODE_PRIVATE)
+                .edit().putString("cover", coverPath).apply();
+        rebuildUI();
+        toast(label);
+    }
+
+    /** 背景层：底图按 CENTER_CROP 铺，上面盖薄雾（不变形） */
+    static class CoverLayerDrawable extends android.graphics.drawable.Drawable {
+        private final android.graphics.drawable.Drawable img;
+        private final android.graphics.drawable.Drawable veil;
+
+        CoverLayerDrawable(android.graphics.drawable.Drawable img,
+                           android.graphics.drawable.Drawable veil) {
+            this.img = img; this.veil = veil;
+        }
+
+        @Override public void draw(android.graphics.Canvas c) {
+            android.graphics.Rect b = getBounds();
+            android.graphics.Bitmap bmp = null;
+            if (img instanceof android.graphics.drawable.BitmapDrawable) {
+                bmp = ((android.graphics.drawable.BitmapDrawable) img).getBitmap();
+            }
+            if (bmp != null && bmp.getWidth() > 0 && bmp.getHeight() > 0) {
+                float sw = (float) bmp.getWidth() / bmp.getHeight();
+                float bw = b.width(), bh = b.height();
+                float dw, dh;
+                if (sw > bw / bh) { dh = bh; dw = bh * sw; }
+                else { dw = bw; dh = bw / sw; }
+                float left = b.left + (bw - dw) / 2f;
+                float top = b.top + (bh - dh) / 2f;
+                c.drawBitmap(bmp, null,
+                        new android.graphics.RectF(left, top, left + dw, top + dh), null);
+            } else {
+                img.setBounds(b);
+                img.draw(c);
+            }
+            veil.setBounds(b);
+            veil.draw(c);
+        }
+
+        @Override public void setAlpha(int a) { }
+        @Override public void setColorFilter(android.graphics.ColorFilter cf) { }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.OPAQUE; }
+    }
+
+    /** 选背景：跟微信一样的九宫格，点一下立刻换上 */
+    void showBgPicker() {
+        if (isFinishing()) return;
+
+        android.widget.ScrollView sc = new android.widget.ScrollView(this);
+        sc.setBackgroundColor(Theme.dark ? 0xFF17181A : 0xFFF7F7F7);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(12), dp(14), dp(12), dp(24));
+
+        android.widget.TextView title = new android.widget.TextView(this);
+        title.setText("聊天背景");
+        title.setTextSize(17);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setTextColor(Theme.dark ? 0xFFEDEDED : 0xFF1A1A1A);
+        title.setPadding(dp(4), 0, 0, dp(12));
+        col.addView(title);
+
+        // 当前选中的值
+        final String cur = coverPath == null ? "" : coverPath;
+
+        // 3 列网格
+        LinearLayout row = null;
+        int idx = 0;
+        // 第一格：无背景（纯主题色）
+        String[] keys = new String[BG_PRESETS.length + 1];
+        String[] names = new String[BG_PRESETS.length + 1];
+        keys[0] = ""; names[0] = "无背景";
+        for (int i = 0; i < BG_PRESETS.length; i++) {
+            keys[i + 1] = "preset:" + BG_PRESETS[i][0];
+            names[i + 1] = BG_PRESETS[i][1];
+        }
+
+        for (int i = 0; i < keys.length; i++) {
+            if (i % 3 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+                rlp.bottomMargin = dp(10);
+                col.addView(row, rlp);
+            }
+            final String k = keys[i];
+            final String nm = names[i];
+            final boolean sel = k.equals(cur);
+
+            // 一格：方图 + 名字
+            LinearLayout cell = new LinearLayout(this);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams clp =
+                    new LinearLayout.LayoutParams(0, -2, 1f);
+            if (i % 3 != 2) clp.rightMargin = dp(8);
+            row.addView(cell, clp);
+
+            FrameLayout box = new FrameLayout(this);
+            LinearLayout.LayoutParams blp =
+                    new LinearLayout.LayoutParams(-1, dp(96));
+            cell.addView(box, blp);
+
+            // 底图（圆角、裁切显示，不拉伸）
+            ImageView iv = new ImageView(this);
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            if (k.startsWith("preset:")) {
+                int rid = presetResId(k.substring(7));
+                if (rid != 0) iv.setImageResource(rid);
+            } else {
+                // 无背景：画主题色
+                android.graphics.drawable.GradientDrawable gd =
+                        new android.graphics.drawable.GradientDrawable();
+                gd.setColor(Theme.dark ? 0xFF1C1D20 : 0xFFFFFFFF);
+                iv.setImageDrawable(gd);
+                iv.setScaleType(ImageView.ScaleType.FIT_XY);
+            }
+            box.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+
+            // 圆角遮罩
+            android.graphics.drawable.GradientDrawable mask =
+                    new android.graphics.drawable.GradientDrawable();
+            mask.setColor(0x00000000);
+            mask.setCornerRadius(dp(8));
+            mask.setStroke(dp(1), Theme.dark ? 0x22FFFFFF : 0x11000000);
+            View mv = new View(this);
+            mv.setBackground(mask);
+            box.addView(mv, new FrameLayout.LayoutParams(-1, -1));
+
+            // 选中打勾
+            if (sel) {
+                android.widget.TextView tick = new android.widget.TextView(this);
+                tick.setText("✓");
+                tick.setTextSize(15);
+                tick.setTextColor(0xFFFFFFFF);
+                tick.setGravity(Gravity.CENTER);
+                android.graphics.drawable.GradientDrawable tg =
+                        new android.graphics.drawable.GradientDrawable();
+                tg.setColor(0xFF5BAD4E);
+                tg.setCornerRadius(dp(7));
+                tick.setBackground(tg);
+                FrameLayout.LayoutParams tlp =
+                        new FrameLayout.LayoutParams(-1, dp(24));
+                tlp.gravity = Gravity.BOTTOM;
+                box.addView(tick, tlp);
+            }
+
+            // 名字
+            android.widget.TextView tv = new android.widget.TextView(this);
+            tv.setText(nm);
+            tv.setTextSize(11);
+            tv.setGravity(Gravity.CENTER);
+            tv.setTextColor(sel ? (Theme.dark ? 0xFF8FD7F0 : 0xFF2E7DA6)
+                                : (Theme.dark ? 0xFF9A9A9A : 0xFF888888));
+            LinearLayout.LayoutParams tlp2 =
+                    new LinearLayout.LayoutParams(-1, -2);
+            tlp2.topMargin = dp(5);
+            cell.addView(tv, tlp2);
+
+            box.setOnClickListener(v -> {
+                dismissBgPicker();
+                applyBg(k, "背景换成「" + nm + "」");
+            });
+            idx++;
+        }
+
+        // 分隔线
+        View div = new View(this);
+        div.setBackgroundColor(Theme.dark ? 0xFF2A2C30 : 0xFFE8E8E8);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-1, dp(1));
+        dlp.topMargin = dp(6); dlp.bottomMargin = dp(10);
+        col.addView(div, dlp);
+
+        // 从相册选 / 拍一张
+        LinearLayout more = new LinearLayout(this);
+        more.setOrientation(LinearLayout.VERTICAL);
+        android.graphics.drawable.GradientDrawable mbg =
+                new android.graphics.drawable.GradientDrawable();
+        mbg.setColor(Theme.dark ? 0xFF232529 : 0xFFFFFFFF);
+        mbg.setCornerRadius(dp(12));
+        more.setBackground(mbg);
+        more.setPadding(dp(16), dp(2), dp(16), dp(2));
+
+        more.addView(makeBgRow("从相册中选择", () -> { dismissBgPicker(); pickCover(); }), new LinearLayout.LayoutParams(-1, -2));
+        View d2 = new View(this);
+        d2.setBackgroundColor(Theme.dark ? 0xFF2A2C30 : 0xFFEEEEEE);
+        more.addView(d2, new LinearLayout.LayoutParams(-1, dp(1)));
+        more.addView(makeBgRow("拍一张", () -> { dismissBgPicker(); takePhoto(); }), new LinearLayout.LayoutParams(-1, -2));
+        col.addView(more, new LinearLayout.LayoutParams(-1, -2));
+
+        sc.addView(col, new android.widget.FrameLayout.LayoutParams(-1, -2));
+
+        bgPickerDialog = new android.app.Dialog(this,
+                android.R.style.Theme_DeviceDefault_Light_NoActionBar);
+        bgPickerDialog.setContentView(sc);
+        android.view.Window w = bgPickerDialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
+                    Theme.dark ? 0xFF17181A : 0xFFF7F7F7));
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            w.setLayout((int) (dm.widthPixels * 0.94f),
+                    (int) (dm.heightPixels * 0.82f));
+        }
+        bgPickerDialog.show();
+    }
+
+    private android.app.Dialog bgPickerDialog;
+
+    private void dismissBgPicker() {
+        try { if (bgPickerDialog != null && bgPickerDialog.isShowing()) bgPickerDialog.dismiss(); }
+        catch (Throwable ignored) { }
+        bgPickerDialog = null;
+    }
+
+    /** 一行「文字 + >」样子的按钮 */
+    private View makeBgRow(String label, Runnable onClick) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(dp(2), dp(14), dp(2), dp(14));
+        android.widget.TextView tv = new android.widget.TextView(this);
+        tv.setText(label);
+        tv.setTextSize(15);
+        tv.setTextColor(Theme.dark ? 0xFFEDEDED : 0xFF1A1A1A);
+        r.addView(tv, new LinearLayout.LayoutParams(0, -2, 1f));
+        android.widget.TextView arw = new android.widget.TextView(this);
+        arw.setText("›");
+        arw.setTextSize(19);
+        arw.setTextColor(Theme.dark ? 0xFF6A6A6A : 0xFFBBBBBB);
+        r.addView(arw);
+        r.setOnClickListener(v -> onClick.run());
+        return r;
+    }
+
+    /** 拍照当背景 */
+    private void takePhoto() {
+        try {
+            Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            java.io.File f = new java.io.File(getFilesDir(), "cover_shot.jpg");
+            if (f.exists()) f.delete();
+            i.putExtra(android.provider.MediaStore.EXTRA_OUTPUT,
+                    android.net.Uri.fromFile(f));
+            startActivityForResult(i, 2004);
+        } catch (Throwable e) {
+            toast("照相机打不开：" + e.getMessage());
+        }
+    }
+
     /** 选封面（聊天背景图） */
     private void pickCover() {
         Intent i = new Intent(Intent.ACTION_GET_CONTENT);
