@@ -111,7 +111,15 @@ bash android/build.sh
 4. 左上角绿点亮了就是通了
 
 **不在同一个 WiFi？**
-电脑和手机都装 [Tailscale](https://tailscale.com)，填 Tailscale 的 IP 就行
+
+这个项目本身不做内网穿透 —— 它只在电脑上开一个本地端口（`8787`），同一个 WiFi 下手机直接连就行。
+
+要在外面（不同网络）用，得自己另外做内网穿透，常见两种：
+
+- [Tailscale](https://tailscale.com)：装完电脑和手机就进同一个虚拟局域网了，App 里填 Tailscale 给的 IP
+- 其他穿透工具（frp、cpolar、ngrok 之类）：把 `8787` 端口映射出去，填映射出来的地址
+
+**注意：开穿透就等于把这个端口暴露到公网。** 主口令是唯一的门，别设太短，也别随手发给别人。
 
 ---
 
