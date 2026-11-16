@@ -358,7 +358,10 @@ function pushMsg(role, content) {
   return m
 }
 import { renderStickers, stickerNamesHint, stickerCount, stickerGallery } from './stickers.mjs'
-import { recall, recallLine, recallChat, chatLine } from './recall.mjs'
+// 记忆：走新的五轨模块（key/user/memory/project/daily）
+import { recall as memRecall, recallChat, chatLine, addMemory, stats as memStats, listTrack } from './memory.mjs'
+import { addTodo, listTodos, doneTodo, updateTodo, removeTodo, dueTodos } from './dtodo.mjs'
+import { createSkill, patchSkill, readSkill, listSkills, removeSkill } from './skills.mjs'
 import { shareVideo, wantsVideo } from './douyin.mjs'
 import { lookAtImage } from './vision.mjs'
 import { writeFileSync as _wf } from 'node:fs'
@@ -401,59 +404,20 @@ function nowLine() {
 
 function buildMessages(userText) {
   const parts = [nowLine(), '', persona, '']
-  // ---- 照 Aurabot 原来的写法 ----
-  // ① 你对他的印象
-  const prof = (mem.profiles || [])[0]
-  if (prof && prof.text) {
-    parts.push('（你对' + (prof.name ? '「' + prof.name + '」' : '对方') + '的印象：' + prof.text + '）')
-  }
 
-  // ② 相处的经验
-  const ins = mem.insights || []
-  if (ins.length) {
-    parts.push('（和对方相处的经验，照着做就好，不用说出来：' + ins.map(x => (x.text || x)).join('；') + '）')
-  }
+  // 记忆统一走 memory.mjs 的五轨（key/user/memory/project/daily）
+  // 旧的 mem.profiles / insights / styles / style_samples 已在迁移时并入 user.md，
+  // 这里不再单独拼，避免重复占 token。
 
-  // ③ 说话方式
-  const sty = (mem.styles && mem.styles.about_you) || []
-  const self = (mem.styles && mem.styles.self) || []
-  if (sty.length || self.length) {
-    const a = sty.length ? '和对方聊久了，' + sty.join('；') : ''
-    const b = self.length ? '你平时不知不觉会用的说法：' + self.join('、') : ''
-    parts.push('（说话方式：' + [a, b].filter(Boolean).join('。') +
-      '。自然带一点就好，别刻意模仿，也别变成另一个人。）')
-  }
+  // ⑤⑥⑦ 记忆：走新的五轨模块
+  //   key 轨永远全带；user/memory/project/daily 按这句话检索
+  try {
+    const prevQ = history.length >= 2 ? history[history.length - 2].content : ''
+    const r = memRecall(userText, prevQ, 6)
+    if (r && r.line) parts.push(r.line, '')
+  } catch (e) { log('【记忆检索失败】', e.message) }
 
-  // ④ 最近做过的事
-  const recentActs = (mem.memories || [])
-    .filter(m => {
-      const src = m.source || ''
-      const at = m.at || 0
-      return (src === 'event' || src === 'diary') && at > Date.now() - 24 * 3600 * 1000
-    })
-    .sort((x, y) => (y.at || 0) - (x.at || 0))
-    .slice(0, 4)
-  if (recentActs.length) {
-    const ago = (at) => {
-      const m = Math.round((Date.now() - at) / 60000)
-      if (m < 60) return m + '分钟前'
-      const h = Math.round(m / 60)
-      if (h < 24) return h + '小时前'
-      return Math.round(h / 24) + '天前'
-    }
-    parts.push('（你最近做过的事：' + recentActs.map(m => ago(m.at) + (m.title || m.text || '')).join('；') + '。聊到了可以自然提起。）')
-  }
-
-  // ⑤ 置顶的约定（不管问什么，每轮都在）
-  const allM = Array.isArray(mem.memories) ? mem.memories : []
-  const pinned = allM.filter(m => m.pinned)
-  if (pinned.length) {
-    parts.push('## 你们说好的事（这个必须记着）', '')
-    for (const m of pinned) parts.push(`- ${m.title}：${m.detail || ''}`)
-    parts.push('')
-  }
-
-  // ⑥ 翻你们以前真说过的原话（QQ 那 4000 多条）
+  // ⑧ 翻你们以前真说过的原话
   try {
     const prevQ = history.length >= 2 ? history[history.length - 2].content : ''
     const chats = recallChat(userText, prevQ, 2)
@@ -461,21 +425,6 @@ function buildMessages(userText) {
     if (cl) parts.push(cl, '')
   } catch (e) { log('【原文检索失败】', e.message) }
 
-  // ⑥ 和这一句相关的记忆（只挑 4 条，Aurabot 的做法）
-  const allMem = Array.isArray(mem.memories) ? mem.memories : []
-  if (allMem.length) {
-    const prev = history.length >= 2 ? history[history.length - 2].content : ''
-    const hits = recall(allMem, userText, prev, 4)
-    const line = recallLine(hits)
-    if (line) parts.push(line, '')
-  }
-
-  const ss = mem.style_samples || []
-  if (ss.length) {
-    parts.push('## 你真实说过的话', '', '不是为了照抄，是让你找回那个口气。', '')
-    for (const s of ss) parts.push(`- ${s}`)
-    parts.push('')
-  }
   try { parts.push(describeEmotion(), '') } catch (e) { log('【情绪拼装失败】', e.message) }
   // 她会发表情包
   const names = stickerNamesHint(60)
@@ -627,7 +576,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         name: '吃白饭的大肥鱼',
         persona: persona.length,
-        memories: Array.isArray(mem.memories) ? mem.memories.length : Object.keys(mem.memories || {}).length,
+        memories: memStats().total,
+        memoryDetail: memStats(),
         history: history.length,
         emotion: describeEmotion(),
         clients: clients.size,
@@ -885,6 +835,103 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 人格清单（切换用）
+    // ===== 记忆 / 待办 / 技能（memory.mjs + dtodo.mjs + skills.mjs）=====
+    // 统一入口：/app/mem 下面按 action 分
+    if (path === '/app/mem') {
+      if (!need(req, url, res, 'owner')) return
+      const act = String(url.searchParams.get('act') || 'stats')
+      try {
+        if (act === 'stats') {
+          return json(res, 200, { ok: true, memory: memStats(), todos: dueTodos().length, skills: listSkills().length })
+        }
+        if (act === 'list') {
+          const track = String(url.searchParams.get('track') || 'all')
+          if (track === 'all') {
+            const all = listTrack('all')
+            return json(res, 200, { ok: true, tracks: {
+              key: all.key.length, user: all.user.length,
+              memory: all.memory.length, project: all.project.length,
+              daily: memStats().daily,
+            }, key: all.key, user: all.user })
+          }
+          return json(res, 200, { ok: true, track, list: listTrack(track) })
+        }
+        if (act === 'add') {
+          const body = JSON.parse(await readBody(req))
+          const ok = addMemory(String(body.track || 'memory'), String(body.title || ''), String(body.body || ''),
+            typeof body.w === 'number' ? body.w : 0.7, Array.isArray(body.tags) ? body.tags : [])
+          return json(res, ok ? 200 : 500, { ok })
+        }
+        if (act === 'recall') {
+          const q = String(url.searchParams.get('q') || '')
+          const r = memRecall(q, '', 6)
+          return json(res, 200, { ok: true, key: r.key.length, picked: r.picked.length, line: r.line })
+        }
+      } catch (e) { return json(res, 500, { ok: false, error: e.message }) }
+      return json(res, 400, { ok: false, error: '不认识的 act' })
+    }
+
+    // 待办
+    if (path === '/app/todo') {
+      if (!need(req, url, res, 'owner')) return
+      try {
+        if (req.method === 'GET') {
+          const list = listTodos({
+            target: url.searchParams.get('target') || undefined,
+            status: url.searchParams.get('status') || undefined,
+            all: url.searchParams.get('all') === '1',
+            past: url.searchParams.get('past') === '1',
+            expired: url.searchParams.get('expired') === '1',
+          })
+          return json(res, 200, { ok: true, list })
+        }
+        const b = JSON.parse(await readBody(req))
+        const act = String(b.act || 'add')
+        if (act === 'add') {
+          // 「明天/后天/下周」这种口语时间，翻成日期
+          if (!b.due && b.content) {
+            const s = String(b.content)
+            const d0 = new Date()
+            const add = (n) => {
+              const x = new Date(d0.getTime() + n * 86400000)
+              const p = (k) => String(k).padStart(2, '0')
+              return x.getFullYear() + '-' + p(x.getMonth() + 1) + '-' + p(x.getDate())
+            }
+            if (/明天|明早|明晚/.test(s)) b.due = add(1)
+            else if (/后天/.test(s)) b.due = add(2)
+            else if (/大后天/.test(s)) b.due = add(3)
+            else if (/今晚|今天晚上/.test(s)) b.due = add(0)
+          }
+          return json(res, 200, addTodo(b))
+        }
+        if (act === 'done') return json(res, 200, doneTodo(String(b.id || '')))
+        if (act === 'update') return json(res, 200, updateTodo(String(b.id || ''), b))
+        if (act === 'remove') return json(res, 200, removeTodo(String(b.id || '')))
+        return json(res, 400, { ok: false, error: '不认识的 act' })
+      } catch (e) { return json(res, 500, { ok: false, error: e.message }) }
+    }
+
+    // 技能
+    if (path === '/app/skills') {
+      if (!need(req, url, res, 'owner')) return
+      try {
+        if (req.method === 'GET') {
+          const name = url.searchParams.get('name')
+          if (name) {
+            const s = readSkill(String(name))
+            return json(res, s ? 200 : 404, s ? { ok: true, skill: s } : { ok: false, error: '没有这个技能' })
+          }
+          return json(res, 200, { ok: true, list: listSkills() })
+        }
+        const b = JSON.parse(await readBody(req))
+        const act = String(b.act || 'create')
+        if (act === 'create') return json(res, 200, createSkill(String(b.name || ''), String(b.description || ''), String(b.body || '')))
+        if (act === 'patch') return json(res, 200, patchSkill(String(b.name || ''), String(b.description || ''), String(b.body || '')))
+        if (act === 'remove') return json(res, 200, removeSkill(String(b.name || '')))
+        return json(res, 400, { ok: false, error: '不认识的 act' })
+      } catch (e) { return json(res, 500, { ok: false, error: e.message }) }
+    }
+
     if (req.method === 'GET' && path === '/app/personas') {
       if (!authed(req, url)) return json(res, 401, { ok: false, error: '口令不对' })
       return json(res, 200, {
@@ -915,6 +962,121 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 清空聊天记录（记忆不丢）
+    // ===== 人格文件在线编辑（2026-11-15 加）=====
+    // 规矩：能读能写能恢复备份；写之前必须先备份；写完不立刻生效，重启才生效。
+    const PERSONA_BACKUP = join(__dir, 'backup')
+    const okPersonaName = (s) => /^[\w.-]+\.md$/.test(s)
+
+    // 读一个人格文件的全文
+    if (req.method === 'GET' && path === '/app/persona-file') {
+      if (!need(req, url, res, 'owner')) return
+      const name = String(url.searchParams.get('name') || '')
+      if (!okPersonaName(name)) return json(res, 400, { ok: false, error: '文件名不对' })
+      const full = join(__dir, name)
+      if (!existsSync(full)) return json(res, 404, { ok: false, error: '没有这个文件' })
+      try {
+        const content = readFileSync(full, 'utf8')
+        return json(res, 200, {
+          ok: true, name, content, size: content.length,
+          current: CONFIG.personaFile ? CONFIG.personaFile.split(/[\\/]/).pop() : '',
+        })
+      } catch (e) { return json(res, 500, { ok: false, error: e.message }) }
+    }
+
+    // 写一个人格文件（先备份，再写；不重新加载）
+    if (req.method === 'POST' && path === '/app/persona-file') {
+      if (!need(req, url, res, 'owner')) return
+      let body
+      try { body = JSON.parse(await readBody(req)) } catch { return json(res, 400, { ok: false, error: '不是合法 JSON' }) }
+      const name = String(body.name || '')
+      const content = String(body.content ?? '')
+      if (!okPersonaName(name)) return json(res, 400, { ok: false, error: '文件名不对' })
+      if (!content.trim()) return json(res, 400, { ok: false, error: '内容不能是空的' })
+      if (content.length > 2_000_000) return json(res, 400, { ok: false, error: '内容太长（上限 200 万字）' })
+
+      const full = join(__dir, name)
+      if (!existsSync(full)) return json(res, 404, { ok: false, error: '没有这个文件' })
+
+      try {
+        // ① 先备份旧的
+        mkdirSync(PERSONA_BACKUP, { recursive: true })
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+        const bakName = name.replace(/\.md$/, '') + `.bak-${stamp}.md`
+        const bakPath = join(PERSONA_BACKUP, bakName)
+        writeFileSync(bakPath, readFileSync(full, 'utf8'), 'utf8')
+
+        // ② 再写新的
+        writeFileSync(full, content, 'utf8')
+        log('改人格文件', name, content.length, '字，旧版存到 backup/' + bakName)
+
+        return json(res, 200, {
+          ok: true, name, size: content.length, backup: 'backup/' + bakName,
+          needRestart: true,   // 提示调用方：要重启才生效
+        })
+      } catch (e) {
+        log('【改人格失败】', e.message)
+        return json(res, 500, { ok: false, error: e.message })
+      }
+    }
+
+    // 列出某个人格文件的历史备份（最新的在前）
+    if (req.method === 'GET' && path === '/app/persona-backups') {
+      if (!need(req, url, res, 'owner')) return
+      const name = String(url.searchParams.get('name') || '')
+      if (!okPersonaName(name)) return json(res, 400, { ok: false, error: '文件名不对' })
+      const stem = name.replace(/\.md$/, '')
+      let files = []
+      try {
+        if (existsSync(PERSONA_BACKUP)) {
+          files = readdirSync(PERSONA_BACKUP)
+            .filter(f => f.startsWith(stem + '.bak-') && f.endsWith('.md'))
+            .sort().reverse()                       // 时间戳在名字里，倒序=最新在前
+            .map(f => {
+              let size = 0, mtime = 0
+              try { const st = statSync(join(PERSONA_BACKUP, f)); size = st.size; mtime = st.mtimeMs } catch {}
+              return { file: f, size, mtime }
+            })
+        }
+      } catch (e) { return json(res, 500, { ok: false, error: e.message }) }
+      return json(res, 200, { ok: true, name, list: files })
+    }
+
+    // 从某个备份恢复（恢复前也先把当前版本备份一次，防后悔）
+    if (req.method === 'POST' && path === '/app/persona-restore') {
+      if (!need(req, url, res, 'owner')) return
+      let body
+      try { body = JSON.parse(await readBody(req)) } catch { return json(res, 400, { ok: false, error: '不是合法 JSON' }) }
+      const name = String(body.name || '')
+      const bak = String(body.backup || '')
+      if (!okPersonaName(name)) return json(res, 400, { ok: false, error: '文件名不对' })
+      if (!/^[\w.-]+\.md$/.test(bak)) return json(res, 400, { ok: false, error: '备份名不对' })
+
+      const full = join(__dir, name)
+      const bakPath = join(PERSONA_BACKUP, bak)
+      if (!existsSync(full)) return json(res, 404, { ok: false, error: '没这个文件' })
+      if (!existsSync(bakPath)) return json(res, 404, { ok: false, error: '没这个备份' })
+
+      try {
+        // 恢复前先把当前版本存一份
+        mkdirSync(PERSONA_BACKUP, { recursive: true })
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+        const saveName = name.replace(/\.md$/, '') + `.bak-${stamp}.md`
+        writeFileSync(join(PERSONA_BACKUP, saveName), readFileSync(full, 'utf8'), 'utf8')
+
+        const content = readFileSync(bakPath, 'utf8')
+        writeFileSync(full, content, 'utf8')
+        log('从备份恢复人格', name, '←', bak, content.length, '字')
+
+        return json(res, 200, {
+          ok: true, name, from: bak, size: content.length,
+          backup: 'backup/' + saveName, needRestart: true,
+        })
+      } catch (e) {
+        log('【恢复人格失败】', e.message)
+        return json(res, 500, { ok: false, error: e.message })
+      }
+    }
+
     if (req.method === 'POST' && path === '/app/clear') {
       if (!need(req, url, res, 'owner')) return
       const before = history.length
@@ -1115,18 +1277,27 @@ const server = http.createServer(async (req, res) => {
     // 共享记忆与偏好（看）
     if (req.method === 'GET' && path === '/app/memories') {
       if (!need(req, url, res, 'owner')) return
-      let m = {}
-      try { m = JSON.parse(readFileSync(join(DATA, 'memories.json'), 'utf8')) } catch {}
+      // 走新的五轨记忆模块
+      const st = memStats()
+      const g = (track) => {
+        try { return listTrack(track) || [] } catch { return [] }
+      }
+      const userList = g('user')
+      const keyList = g('key')
       return json(res, 200, {
         ok: true,
         counts: {
-          memories: (m.memories || []).length,
-          insights: (m.insights || []).length,
-          profiles: (m.profiles || []).length,
-          styleSamples: (m.style_samples || []).length,
+          key: st.key,
+          user: st.user,
+          memory: st.memory,
+          project: st.project,
+          daily: st.daily,
+          total: st.total,
+          chatblocks: st.chatblocks,
         },
-        insights: (m.insights || []).map(x => x.text || x).slice(-40),
-        profiles: (m.profiles || []).map(p => ({ name: p.name || '', text: p.text || '' })),
+        // 面板上直接看得到的部分：用户档案 + 关键记忆
+        insights: userList.map(e => e.title + (e.body ? '——' + e.body : '')).slice(-40),
+        keyFacts: keyList.map(e => ({ title: e.title, detail: e.body, w: e.w })),
       })
     }
 
